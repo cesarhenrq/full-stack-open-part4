@@ -25,7 +25,7 @@ const nonExistingId = async () => {
 
   await blog.save();
 
-  await blog.remove();
+  await blog.deleteOne();
 
   return blog._id.toString();
 };
