@@ -120,7 +120,59 @@ describe('deletion of a blog', () => {
   });
 });
 
+describe('updating a blog', () => {
+  test('succeeds with status code 200 if id is valid', async () => {
+    const blogsAtStart = await helper.blogsInDb();
+    const blogToUpdate = blogsAtStart[0];
+
+    const updatedBlog = {
+      likes: 50
+    };
+
+    await api
+      .put(`/api/blogs/${blogToUpdate.id}`)
+      .send(updatedBlog)
+      .expect(200);
+
+    const blogsAtEnd = await helper.blogsInDb();
+
+    const updatedBlogInDb = blogsAtEnd.find(
+      (blog) => blog.id === blogToUpdate.id
+    );
+
+    expect(updatedBlogInDb.likes).toBe(50);
+  });
+
+  test('fails with status code 404 if id not exist', async () => {
+    const validNonexistingId = await helper.nonExistingId();
+
+    await api
+      .put(`/api/blogs/${validNonexistingId}`)
+      .send({ likes: 50 })
+      .expect(404);
+  });
+
+  test('fails with status code 400 if id is invalid', async () => {
+    const invalidId = '123456789';
+
+    await api.put(`/api/blogs/${invalidId}`).send({ likes: 50 }).expect(400);
+  });
+
+  test('fails with status code 400 if likes is not convertable to a number', async () => {
+    const blogsAtStart = await helper.blogsInDb();
+    const blogToUpdate = blogsAtStart[0];
+
+    const updatedBlog = {
+      likes: ['50']
+    };
+
+    await api
+      .put(`/api/blogs/${blogToUpdate.id}`)
+      .send(updatedBlog)
+      .expect(400);
+  });
+});
+
 afterAll(async () => {
-  await Blog.deleteMany({});
   await mongoose.connection.close();
 });
