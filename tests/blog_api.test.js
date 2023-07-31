@@ -175,16 +175,16 @@ describe('updating a blog', () => {
   });
 });
 
+beforeEach(async () => {
+  await User.deleteMany({});
+
+  const passwordHash = await bcrypt.hash('sekret', 10);
+  const user = new User({ username: 'root', passwordHash });
+
+  await user.save();
+});
+
 describe('when there is initially one user in db', () => {
-  beforeEach(async () => {
-    await User.deleteMany({});
-
-    const passwordHash = await bcrypt.hash('sekret', 10);
-    const user = new User({ username: 'root', passwordHash });
-
-    await user.save();
-  });
-
   test('users are returned as json', async () => {
     await api
       .get('/api/users')
@@ -192,7 +192,15 @@ describe('when there is initially one user in db', () => {
       .expect('Content-Type', /application\/json/);
   });
 
-  test('creation succeeds with a fresh username', async () => {
+  test('the unique identifier property of the user is named id', async () => {
+    const response = await api.get('/api/users');
+    const user = response.body[0];
+    expect(user.id).toBeDefined();
+  });
+});
+
+describe('addition of a new user', () => {
+  test('succeeds with a fresh username', async () => {
     const usersAtStart = await helper.usersInDb();
 
     const newUser = {
@@ -212,6 +220,91 @@ describe('when there is initially one user in db', () => {
 
     const usernames = usersAtEnd.map((u) => u.username);
     expect(usernames).toContain(newUser.username);
+  });
+
+  test('fails with proper statuscode and message if username already taken', async () => {
+    const usersAtStart = await helper.usersInDb();
+
+    const newUser = {
+      username: 'root',
+      name: 'Superuser',
+      password: 'salainen'
+    };
+
+    const result = await api.post('/api/users').send(newUser).expect(400);
+
+    const usersAtEnd = await helper.usersInDb();
+
+    expect(result.body.error).toContain('`username` to be unique');
+    expect(usersAtStart).toHaveLength(usersAtEnd.length);
+  });
+
+  test('fails with proper statuscode and message if username is missing', async () => {
+    const usersAtStart = await helper.usersInDb();
+
+    const newUser = {
+      name: 'Superuser',
+      password: 'salainen'
+    };
+
+    const result = await api.post('/api/users').send(newUser).expect(400);
+
+    const usersAtEnd = await helper.usersInDb();
+
+    expect(result.body.error).toContain('`username` is required');
+    expect(usersAtStart).toHaveLength(usersAtEnd.length);
+  });
+
+  test('fails with proper statuscode and message if username is shorter than 3 characters', async () => {
+    const usersAtStart = await helper.usersInDb();
+
+    const newUser = {
+      username: 'ro',
+      name: 'Superuser',
+      password: 'salainen'
+    };
+
+    const result = await api.post('/api/users').send(newUser).expect(400);
+
+    const usersAtEnd = await helper.usersInDb();
+
+    expect(result.body.error).toContain(
+      'is shorter than the minimum allowed length (3)'
+    );
+    expect(usersAtStart).toHaveLength(usersAtEnd.length);
+  });
+
+  test('fails with proper statuscode and message if password is missing', async () => {
+    const usersAtStart = await helper.usersInDb();
+
+    const newUser = {
+      name: 'Superuser',
+      username: 'root'
+    };
+
+    const result = await api.post('/api/users').send(newUser).expect(400);
+
+    const usersAtEnd = await helper.usersInDb();
+
+    expect(result.body.error).toContain('password missing');
+    expect(usersAtStart).toHaveLength(usersAtEnd.length);
+  });
+
+  test('fails with proper statuscode and message if password is shorter than 3 characters', async () => {
+    const usersAtStart = await helper.usersInDb();
+
+    const newUser = {
+      name: 'Superuser',
+      username: 'root',
+      password: 'sa'
+    };
+
+    const result = await api.post('/api/users').send(newUser).expect(400);
+
+    const usersAtEnd = await helper.usersInDb();
+
+    expect(result.body.error).toContain('password must be at least 3');
+    expect(usersAtStart).toHaveLength(usersAtEnd.length);
   });
 });
 
