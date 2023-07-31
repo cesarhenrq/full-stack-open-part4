@@ -348,6 +348,52 @@ describe('addition of a new user', () => {
   });
 });
 
+describe('authentication of a user', () => {
+  test('succeeds with valid credentials', async () => {
+    const userToLogin = { username: 'root', password: 'sekret' };
+
+    const userInDb = await User.findOne({ username: userToLogin.username });
+
+    const result = await api.post('/api/login').send(userToLogin).expect(200);
+
+    expect(result.body.token).toBeDefined();
+    expect(result.body.username).toBe(userToLogin.username);
+    expect(result.body.name).toBe(userInDb.name);
+  });
+
+  test('fails with proper statuscode and message if username is missing', async () => {
+    const userToLogin = { password: 'sekret' };
+
+    const result = await api.post('/api/login').send(userToLogin).expect(401);
+
+    expect(result.body.error).toContain('invalid username or password');
+  });
+
+  test('fails with proper statuscode and message if password is missing', async () => {
+    const userToLogin = { username: 'root' };
+
+    const result = await api.post('/api/login').send(userToLogin).expect(401);
+
+    expect(result.body.error).toContain('invalid username or password');
+  });
+
+  test('fails with proper statuscode and message if username is invalid', async () => {
+    const userToLogin = { username: 'invalid', password: 'sekret' };
+
+    const result = await api.post('/api/login').send(userToLogin).expect(401);
+
+    expect(result.body.error).toContain('invalid username or password');
+  });
+
+  test('fails with proper statuscode and message if password is invalid', async () => {
+    const userToLogin = { username: 'root', password: 'invalid' };
+
+    const result = await api.post('/api/login').send(userToLogin).expect(401);
+
+    expect(result.body.error).toContain('invalid username or password');
+  });
+});
+
 afterAll(async () => {
   await mongoose.connection.close();
 });
