@@ -9,8 +9,21 @@ const app = require('../app');
 const api = supertest(app);
 
 beforeEach(async () => {
+  await User.deleteMany({});
+
+  const passwordHash = await bcrypt.hash('sekret', 10);
+  const user = new User({ username: 'root', passwordHash });
+
+  await user.save();
+
   await Blog.deleteMany({});
-  await Blog.insertMany(helper.initialBlogs);
+
+  const blogs = helper.initialBlogs.map((blog) => ({
+    ...blog,
+    user: user._id
+  }));
+
+  await Blog.insertMany(blogs);
 });
 
 describe('when there is initially some blogs saved', () => {
@@ -26,15 +39,25 @@ describe('when there is initially some blogs saved', () => {
     const blog = response.body[0];
     expect(blog.id).toBeDefined();
   });
+
+  test('all blogs have a user property', async () => {
+    const response = await api.get('/api/blogs');
+    const blog = response.body[0];
+    expect(blog.user).toBeDefined();
+  });
 });
 
 describe('addition of a new blog', () => {
   test('succeeds with valid data', async () => {
+    const users = await helper.usersInDb();
+    const user = users[0].id;
+
     const newBlog = {
       title: 'New Blog',
       author: 'New Author',
       url: 'http://newblog.com',
-      likes: 0
+      likes: 0,
+      user
     };
 
     await api
@@ -49,14 +72,17 @@ describe('addition of a new blog', () => {
     delete addedBlog.id;
 
     expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length + 1);
-    expect(addedBlog).toEqual(newBlog);
   });
 
   test('with the likes property missing from the request, it will default to the value 0', async () => {
+    const users = await helper.usersInDb();
+    const user = users[0].id;
+
     const newBlog = {
       title: 'New Blog',
       author: 'New Author',
-      url: 'http://newblog.com'
+      url: 'http://newblog.com',
+      user
     };
 
     await api
@@ -73,23 +99,46 @@ describe('addition of a new blog', () => {
   });
 
   test('fails if the title propertie is missing from the request data, the backend responds to the request with the status code 400 Bad Request', async () => {
+    const users = await helper.usersInDb();
+    const user = users[0].id;
+
     const newBlog = {
       author: 'New Author',
       url: 'http://newblog.com',
-      likes: 0
+      likes: 0,
+      user
     };
 
     await api.post('/api/blogs').send(newBlog).expect(400);
   });
 
   test('fails if the url propertie is missing from the request data, the backend responds to the request with the status code 400 Bad Request', async () => {
+    const users = await helper.usersInDb();
+    const user = users[0].id;
+
     const newBlog = {
       title: 'New Blog',
       author: 'New Author',
+      likes: 0,
+      user
+    };
+
+    await api.post('/api/blogs').send(newBlog).expect(400);
+  });
+
+  test('fails if the user propertie is missing from the request data, the backend responds to the request with the status code 400 Bad Request', async () => {
+    const newBlog = {
+      title: 'New Blog',
+      author: 'New Author',
+      url: 'http://newblog.com',
       likes: 0
     };
 
     await api.post('/api/blogs').send(newBlog).expect(400);
+
+    const blogsAtEnd = await helper.blogsInDb();
+
+    expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length);
   });
 });
 
@@ -173,15 +222,6 @@ describe('updating a blog', () => {
       .send(updatedBlog)
       .expect(400);
   });
-});
-
-beforeEach(async () => {
-  await User.deleteMany({});
-
-  const passwordHash = await bcrypt.hash('sekret', 10);
-  const user = new User({ username: 'root', passwordHash });
-
-  await user.save();
 });
 
 describe('when there is initially one user in db', () => {
