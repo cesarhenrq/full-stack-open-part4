@@ -3,10 +3,15 @@ const supertest = require('supertest');
 const Blog = require('../models/blog');
 const User = require('../models/user');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const helper = require('./test_helper');
+const { SECRET } = require('../utils/config');
 const app = require('../app');
 
 const api = supertest(app);
+
+let token;
+let username;
 
 beforeEach(async () => {
   await User.deleteMany({});
@@ -24,6 +29,13 @@ beforeEach(async () => {
   }));
 
   await Blog.insertMany(blogs);
+
+  const response = await api
+    .post('/api/login')
+    .send({ username: 'root', password: 'sekret' });
+
+  token = response.body.token;
+  username = response.body.username;
 });
 
 describe('when there is initially some blogs saved', () => {
@@ -49,84 +61,120 @@ describe('when there is initially some blogs saved', () => {
 
 describe('addition of a new blog', () => {
   test('succeeds with valid data', async () => {
-    const users = await helper.usersInDb();
-    const user = users[0].id;
+    const usersAtStart = await helper.usersInDb();
+    const userAtStart = usersAtStart.find((user) => user.username === username);
+    const userBlogsAtStart = userAtStart.blogs.length;
 
     const newBlog = {
       title: 'New Blog',
       author: 'New Author',
       url: 'http://newblog.com',
-      likes: 0,
-      user
+      likes: 0
     };
 
     await api
       .post('/api/blogs')
+      .set('Authorization', `Bearer ${token}`)
       .send(newBlog)
       .expect(201)
       .expect('Content-Type', /application\/json/);
 
     const blogsAtEnd = await helper.blogsInDb();
-
-    const addedBlog = blogsAtEnd.find((blog) => blog.title === 'New Blog');
-    delete addedBlog.id;
+    const usersAtEnd = await helper.usersInDb();
+    const userAtEnd = usersAtEnd.find((user) => user.username === username);
+    const userBlogsAtEnd = userAtEnd.blogs.length;
 
     expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length + 1);
+    expect(userBlogsAtEnd).toBe(userBlogsAtStart + 1);
   });
 
   test('with the likes property missing from the request, it will default to the value 0', async () => {
-    const users = await helper.usersInDb();
-    const user = users[0].id;
+    const usersAtStart = await helper.usersInDb();
+    const userAtStart = usersAtStart.find((user) => user.username === username);
+    const userBlogsAtStart = userAtStart.blogs.length;
 
     const newBlog = {
       title: 'New Blog',
       author: 'New Author',
-      url: 'http://newblog.com',
-      user
+      url: 'http://newblog.com'
     };
 
     await api
       .post('/api/blogs')
+      .set('Authorization', `Bearer ${token}`)
       .send(newBlog)
       .expect(201)
       .expect('Content-Type', /application\/json/);
 
     const blogsAtEnd = await helper.blogsInDb();
-
     const addedBlog = blogsAtEnd.find((blog) => blog.title === 'New Blog');
 
+    const usersAtEnd = await helper.usersInDb();
+    const userAtEnd = usersAtEnd.find((user) => user.username === username);
+    const userBlogsAtEnd = userAtEnd.blogs.length;
+
     expect(addedBlog.likes).toBe(0);
+    expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length + 1);
+    expect(userBlogsAtEnd).toBe(userBlogsAtStart + 1);
   });
 
   test('fails if the title propertie is missing from the request data, the backend responds to the request with the status code 400 Bad Request', async () => {
-    const users = await helper.usersInDb();
-    const user = users[0].id;
+    const usersAtStart = await helper.usersInDb();
+    const userAtStart = usersAtStart.find((user) => user.username === username);
+    const userBlogsAtStart = userAtStart.blogs.length;
 
     const newBlog = {
       author: 'New Author',
       url: 'http://newblog.com',
-      likes: 0,
-      user
+      likes: 0
     };
 
-    await api.post('/api/blogs').send(newBlog).expect(400);
+    await api
+      .post('/api/blogs')
+      .set('Authorization', `Bearer ${token}`)
+      .send(newBlog)
+      .expect(400);
+
+    const blogsAtEnd = await helper.blogsInDb();
+    const usersAtEnd = await helper.usersInDb();
+    const userAtEnd = usersAtEnd.find((user) => user.username === username);
+    const userBlogsAtEnd = userAtEnd.blogs.length;
+
+    expect(userBlogsAtEnd).toBe(userBlogsAtStart);
+    expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length);
   });
 
   test('fails if the url propertie is missing from the request data, the backend responds to the request with the status code 400 Bad Request', async () => {
-    const users = await helper.usersInDb();
-    const user = users[0].id;
+    const usersAtStart = await helper.usersInDb();
+    const userAtStart = usersAtStart.find((user) => user.username === username);
+    const userBlogsAtStart = userAtStart.blogs.length;
 
     const newBlog = {
       title: 'New Blog',
       author: 'New Author',
-      likes: 0,
-      user
+      likes: 0
     };
 
-    await api.post('/api/blogs').send(newBlog).expect(400);
+    await api
+      .post('/api/blogs')
+      .set('Authorization', `Bearer ${token}`)
+      .send(newBlog)
+      .expect(400);
+
+    const blogsAtEnd = await helper.blogsInDb();
+    const usersAtEnd = await helper.usersInDb();
+    const userAtEnd = usersAtEnd.find((user) => user.username === username);
+    const userBlogsAtEnd = userAtEnd.blogs.length;
+
+    expect(userBlogsAtEnd).toBe(userBlogsAtStart);
+    expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length);
   });
 
-  test('fails if the user propertie is missing from the request data, the backend responds to the request with the status code 400 Bad Request', async () => {
+  test('fails if authorization token is missing', async () => {
+    const usersAtStart = await helper.usersInDb();
+    const userAtStart = usersAtStart.find((user) => user.username === username);
+    const userBlogsAtStart = userAtStart.blogs.length;
+
     const newBlog = {
       title: 'New Blog',
       author: 'New Author',
@@ -137,7 +185,41 @@ describe('addition of a new blog', () => {
     await api.post('/api/blogs').send(newBlog).expect(400);
 
     const blogsAtEnd = await helper.blogsInDb();
+    const usersAtEnd = await helper.usersInDb();
+    const userAtEnd = usersAtEnd.find((user) => user.username === username);
+    const userBlogsAtEnd = userAtEnd.blogs.length;
 
+    expect(userBlogsAtEnd).toBe(userBlogsAtStart);
+    expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length);
+  });
+
+  test('fails if authorization token is invalid', async () => {
+    const usersAtStart = await helper.usersInDb();
+    const userAtStart = usersAtStart.find((user) => user.username === username);
+    const userBlogsAtStart = userAtStart.blogs.length;
+
+    const token = jwt.sign({ username: 'invalid' }, SECRET);
+
+    const newBlog = {
+      title: 'New Blog',
+      author: 'New Author',
+      url: 'http://newblog.com',
+      likes: 0
+    };
+
+    await api
+      .post('/api/blogs')
+      .set('Authorization', `Bearer ${token}`)
+      .send(newBlog)
+      .expect(401)
+      .expect('Content-Type', /application\/json/);
+
+    const blogsAtEnd = await helper.blogsInDb();
+    const usersAtEnd = await helper.usersInDb();
+    const userAtEnd = usersAtEnd.find((user) => user.username === username);
+    const userBlogsAtEnd = userAtEnd.blogs.length;
+
+    expect(userBlogsAtEnd).toBe(userBlogsAtStart);
     expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length);
   });
 });
