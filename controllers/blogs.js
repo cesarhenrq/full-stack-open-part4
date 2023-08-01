@@ -15,7 +15,7 @@ blogsRouter.post('/', async (request, response) => {
   const decodedToken = jwt.verify(request.token, SECRET);
 
   if (!decodedToken.id) {
-    const error = new Error('token missing or invalid');
+    const error = new Error('token invalid');
     error.name = 'UnauthorizedError';
     throw error;
   }
@@ -37,13 +37,37 @@ blogsRouter.post('/', async (request, response) => {
 blogsRouter.delete('/:id', async (request, response) => {
   const id = request.params.id;
 
-  const removedBlog = await Blog.findByIdAndRemove(id);
+  const decodedToken = jwt.verify(request.token, SECRET);
 
-  if (removedBlog) {
-    return response.status(204).end();
+  if (!decodedToken.id) {
+    const error = new Error('token invalid');
+    error.name = 'UnauthorizedError';
+    throw error;
   }
 
-  response.status(404).end();
+  const blog = await Blog.findById(id);
+
+  if (!blog) {
+    return response.status(404).end();
+  }
+
+  const isAuthorized = blog.user.toString() === decodedToken.id;
+
+  if (!isAuthorized) {
+    const error = new Error('token invalid');
+    error.name = 'UnauthorizedError';
+    throw error;
+  }
+
+  if (blog && isAuthorized) {
+    await Blog.findByIdAndRemove(id);
+
+    const user = await User.findById(decodedToken.id);
+    user.blogs = user.blogs.filter((blog) => blog.toString() !== id.toString());
+    await user.save();
+
+    return response.status(204).end();
+  }
 });
 
 blogsRouter.put('/:id', async (request, response) => {

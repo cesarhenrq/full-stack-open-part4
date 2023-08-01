@@ -15,20 +15,24 @@ let username;
 
 beforeEach(async () => {
   await User.deleteMany({});
+  await Blog.deleteMany({});
 
   const passwordHash = await bcrypt.hash('sekret', 10);
   const user = new User({ username: 'root', passwordHash });
 
   await user.save();
 
-  await Blog.deleteMany({});
-
   const blogs = helper.initialBlogs.map((blog) => ({
     ...blog,
-    user: user._id
+    user: user._id,
+    _id: new mongoose.Types.ObjectId()
   }));
 
   await Blog.insertMany(blogs);
+
+  await User.findByIdAndUpdate(user._id, {
+    blogs: blogs.map((blog) => blog._id)
+  });
 
   const response = await api
     .post('/api/login')
@@ -229,7 +233,14 @@ describe('deletion of a blog', () => {
     const blogsAtStart = await helper.blogsInDb();
     const blogToDelete = blogsAtStart[0];
 
-    await api.delete(`/api/blogs/${blogToDelete.id}`).expect(204);
+    const usersAtStart = await helper.usersInDb();
+    const userAtStart = usersAtStart.find((user) => user.username === username);
+    const userBlogsAtStart = userAtStart.blogs.length;
+
+    await api
+      .delete(`/api/blogs/${blogToDelete.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204);
 
     const blogsAtEnd = await helper.blogsInDb();
 
@@ -238,18 +249,117 @@ describe('deletion of a blog', () => {
     const titles = blogsAtEnd.map((blog) => blog.title);
 
     expect(titles).not.toContain(blogToDelete.title);
+
+    const usersAtEnd = await helper.usersInDb();
+    const userAtEnd = usersAtEnd.find((user) => user.username === username);
+    const userBlogsAtEnd = userAtEnd.blogs.length;
+
+    expect(userBlogsAtEnd).toBe(userBlogsAtStart - 1);
   });
 
   test('fails with status code 404 if id not exist', async () => {
+    const blogsAtStart = await helper.blogsInDb();
+    const userAtStart = await helper.usersInDb();
+    const userBlogsAtStart = userAtStart[0].blogs.length;
+
     const validNonexistingId = await helper.nonExistingId();
 
-    await api.delete(`/api/blogs/${validNonexistingId}`).expect(404);
+    await api
+      .delete(`/api/blogs/${validNonexistingId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+
+    const blogsAtEnd = await helper.blogsInDb();
+    const userAtEnd = await helper.usersInDb();
+    const userBlogsAtEnd = userAtEnd[0].blogs.length;
+
+    expect(blogsAtEnd).toHaveLength(blogsAtStart.length);
+    expect(userBlogsAtEnd).toBe(userBlogsAtStart);
   });
 
   test('fails with status code 400 if id is invalid', async () => {
+    const blogsAtStart = await helper.blogsInDb();
+    const userAtStart = await helper.usersInDb();
+    const userBlogsAtStart = userAtStart[0].blogs.length;
+
     const invalidId = '123456789';
 
-    await api.delete(`/api/blogs/${invalidId}`).expect(400);
+    await api
+      .delete(`/api/blogs/${invalidId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+
+    const blogsAtEnd = await helper.blogsInDb();
+    const userAtEnd = await helper.usersInDb();
+    const userBlogsAtEnd = userAtEnd[0].blogs.length;
+
+    expect(blogsAtEnd).toHaveLength(blogsAtStart.length);
+    expect(userBlogsAtEnd).toBe(userBlogsAtStart);
+  });
+
+  test('fails with status code 400 if token is missing', async () => {
+    const blogsAtStart = await helper.blogsInDb();
+    const userAtStart = await helper.usersInDb();
+    const userBlogsAtStart = userAtStart[0].blogs.length;
+
+    const blogToDelete = blogsAtStart[0];
+
+    await api.delete(`/api/blogs/${blogToDelete.id}`).expect(400);
+
+    const blogsAtEnd = await helper.blogsInDb();
+    const userAtEnd = await helper.usersInDb();
+    const userBlogsAtEnd = userAtEnd[0].blogs.length;
+
+    expect(blogsAtEnd).toHaveLength(blogsAtStart.length);
+    expect(userBlogsAtEnd).toBe(userBlogsAtStart);
+  });
+
+  test('fails with status code 401 if token is invalid', async () => {
+    const blogsAtStart = await helper.blogsInDb();
+    const userAtStart = await helper.usersInDb();
+    const userBlogsAtStart = userAtStart[0].blogs.length;
+
+    const blogToDelete = blogsAtStart[0];
+
+    const token = jwt.sign({ username: 'invalid' }, SECRET);
+
+    await api
+      .delete(`/api/blogs/${blogToDelete.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(401);
+
+    const blogsAtEnd = await helper.blogsInDb();
+    const userAtEnd = await helper.usersInDb();
+    const userBlogsAtEnd = userAtEnd[0].blogs.length;
+
+    expect(blogsAtEnd).toHaveLength(blogsAtStart.length);
+    expect(userBlogsAtEnd).toBe(userBlogsAtStart);
+  });
+
+  test('fails with status code 401 if token is not the creator', async () => {
+    const blogsAtStart = await helper.blogsInDb();
+    const userAtStart = await helper.usersInDb();
+    const userBlogsAtStart = userAtStart[0].blogs.length;
+
+    const blogToDelete = blogsAtStart[0];
+
+    const token = jwt.sign(
+      { username: 'not_creator', password: '121545' },
+      SECRET,
+      { expiresIn: 60 * 60 }
+    );
+
+    await api
+      .delete(`/api/blogs/${blogToDelete.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(401);
+
+    const blogsAtEnd = await helper.blogsInDb();
+    const userAtEnd = await helper.usersInDb();
+    const userBlogsAtEnd = userAtEnd[0].blogs.length;
+
+    expect(blogsAtEnd).toHaveLength(blogsAtStart.length);
+    expect(userBlogsAtEnd).toBe(userBlogsAtStart);
   });
 });
 
