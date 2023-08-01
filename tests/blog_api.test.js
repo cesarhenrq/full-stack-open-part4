@@ -374,6 +374,7 @@ describe('updating a blog', () => {
 
     await api
       .put(`/api/blogs/${blogToUpdate.id}`)
+      .set('Authorization', `Bearer ${token}`)
       .send(updatedBlog)
       .expect(200);
 
@@ -391,6 +392,7 @@ describe('updating a blog', () => {
 
     await api
       .put(`/api/blogs/${validNonexistingId}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ likes: 50 })
       .expect(404);
   });
@@ -398,7 +400,11 @@ describe('updating a blog', () => {
   test('fails with status code 400 if id is invalid', async () => {
     const invalidId = '123456789';
 
-    await api.put(`/api/blogs/${invalidId}`).send({ likes: 50 }).expect(400);
+    await api
+      .put(`/api/blogs/${invalidId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ likes: 50 })
+      .expect(400);
   });
 
   test('fails with status code 400 if likes is not convertable to a number', async () => {
@@ -411,8 +417,61 @@ describe('updating a blog', () => {
 
     await api
       .put(`/api/blogs/${blogToUpdate.id}`)
+      .set('Authorization', `Bearer ${token}`)
       .send(updatedBlog)
       .expect(400);
+  });
+
+  test('fails with status code 400 if token is missing', async () => {
+    const blogsAtStart = await helper.blogsInDb();
+    const blogToUpdate = blogsAtStart[0];
+
+    const updatedBlog = {
+      likes: 50
+    };
+
+    await api
+      .put(`/api/blogs/${blogToUpdate.id}`)
+      .send(updatedBlog)
+      .expect(400);
+  });
+
+  test('fails with status code 401 if token is invalid', async () => {
+    const blogsAtStart = await helper.blogsInDb();
+    const blogToUpdate = blogsAtStart[0];
+
+    const updatedBlog = {
+      likes: 50
+    };
+
+    const token = jwt.sign({ username: 'invalid' }, SECRET);
+
+    await api
+      .put(`/api/blogs/${blogToUpdate.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(updatedBlog)
+      .expect(401);
+  });
+
+  test('fails with status code 401 if token is not the creator', async () => {
+    const blogsAtStart = await helper.blogsInDb();
+    const blogToUpdate = blogsAtStart[0];
+
+    const updatedBlog = {
+      likes: 50
+    };
+
+    const token = jwt.sign(
+      { username: 'not_creator', password: '121545' },
+      SECRET,
+      { expiresIn: 60 * 60 }
+    );
+
+    await api
+      .put(`/api/blogs/${blogToUpdate.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(updatedBlog)
+      .expect(401);
   });
 });
 
