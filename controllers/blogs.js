@@ -112,4 +112,32 @@ blogsRouter.put('/:id', async (request, response) => {
   response.status(404).end();
 });
 
+blogsRouter.post('/:id/comments', async (request, response) => {
+  const id = request.params.id;
+
+  const comment = request.body.comment;
+
+  const decodedToken = jwt.verify(request.token, SECRET);
+
+  if (!decodedToken.id) {
+    const error = new Error('token invalid');
+    error.name = 'UnauthorizedError';
+    throw error;
+  }
+
+  const blog = await Blog.findById(id);
+
+  if (!blog) {
+    return response.status(404).end();
+  }
+
+  const updatedBlog = await Blog.findByIdAndUpdate(
+    id,
+    { $push: { comments: comment } },
+    { new: true }
+  );
+
+  return response.json(updatedBlog);
+});
+
 module.exports = blogsRouter;
